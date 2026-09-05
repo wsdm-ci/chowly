@@ -1336,8 +1336,6 @@ app.post(
 // START SERVER
 // ======================================================
 
-app.listen(PORT, () => {
-  console.log(
-    `Chowly server running on http://localhost:${PORT}`
-  );
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Chowly server running on http://0.0.0.0:${PORT}`);
 });
