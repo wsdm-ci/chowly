@@ -277,7 +277,6 @@ function App() {
       setRatingValue(0);
       setFeedbackMessage("");
 
-      // Use the newly returned customer ID immediately.
       await loadCustomerOrders(newCustomerId);
     } catch (error) {
       console.error(error);
@@ -379,7 +378,9 @@ function App() {
         const complaintData = await complaintResponse.json();
 
         if (!complaintResponse.ok) {
-          throw new Error(complaintData.error || "Unable to submit complaint.");
+          throw new Error(
+            complaintData.error || "Unable to submit complaint.",
+          );
         }
 
         submittedSomething = true;
@@ -544,6 +545,58 @@ function App() {
       alert(error.message);
     }
   };
+
+  // --------------------------------------------------
+  // WAITER - DELETE ORDER
+  // --------------------------------------------------
+
+const deleteOrder = async () => {
+  if (!selectedOrder) return;
+
+  const confirmed = window.confirm(
+    `Delete Order #${selectedOrder.order_id}? This action cannot be undone.`,
+  );
+
+  if (!confirmed) return;
+
+  try {
+    const response = await fetch(
+      `${API_URL}/orders/${selectedOrder.order_id}`,
+      {
+        method: "DELETE",
+      },
+    );
+
+    const contentType =
+      response.headers.get("content-type") || "";
+
+    const data = contentType.includes("application/json")
+      ? await response.json()
+      : {
+          error: await response.text(),
+        };
+
+    if (!response.ok) {
+      throw new Error(
+        data.error || "Unable to delete order.",
+      );
+    }
+
+    setSelectedOrder(null);
+    setReassigningStaff(false);
+
+    await loadWaiterData();
+
+    alert("Order deleted successfully.");
+  } catch (error) {
+    console.error("Delete order error:", error);
+
+    alert(
+      error.message ||
+        "Unable to delete order.",
+    );
+  }
+};
 
   // --------------------------------------------------
   // WAITER - MARK SERVED
@@ -943,8 +996,8 @@ function App() {
               <div className="pretend-payment-notice">
                 <strong>PRETEND PAYMENT</strong>
                 <span>
-                  This button records a simulated payment for the assignment. No
-                  real money will be charged.
+                  This button records a simulated payment for the assignment.
+                  No real money will be charged.
                 </span>
               </div>
 
@@ -1507,12 +1560,21 @@ function App() {
                 )}
               </section>
 
-              {/* SERVE ORDER */}
-              {selectedOrder.status !== "Served" && (
-                <button className="serve-button" onClick={markServed}>
-                  ✓ Mark Order as Served
+              {/* ORDER ACTIONS */}
+              <div className="order-actions">
+                <button
+                  className="danger-button"
+                  onClick={deleteOrder}
+                >
+                  Delete Order
                 </button>
-              )}
+
+                {selectedOrder.status !== "Served" && (
+                  <button className="serve-button" onClick={markServed}>
+                    ✓ Mark Order as Served
+                  </button>
+                )}
+              </div>
 
               {selectedOrder.status === "Served" && (
                 <div className="served-confirmation">

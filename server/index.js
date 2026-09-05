@@ -998,6 +998,172 @@ app.post(
 );
 
 // ======================================================
+// DELETE ORDER
+// Waiter-only administrative action
+// Paid orders cannot be deleted
+// ======================================================
+
+app.delete("/api/orders/:id", async (req, res) => {
+  const orderId = Number(req.params.id);
+
+  if (!Number.isInteger(orderId)) {
+    return res.status(400).json({
+      error: "Invalid order ID",
+    });
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // --------------------------------------------------
+    // CHECK ORDER EXISTS
+    // --------------------------------------------------
+
+    const orderResult = await client.query(
+      `
+      SELECT
+        order_id
+      FROM orders
+      WHERE order_id = $1;
+      `,
+      [orderId]
+    );
+
+    if (orderResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+
+      return res.status(404).json({
+        error: "Order not found",
+      });
+    }
+
+    // --------------------------------------------------
+    // PROTECT PAID ORDERS
+    // --------------------------------------------------
+
+    const paidResult = await client.query(
+      `
+      SELECT
+        payment_id
+      FROM payment
+      WHERE order_id = $1
+        AND payment_status = 'Paid'
+      LIMIT 1;
+      `,
+      [orderId]
+    );
+
+    if (paidResult.rows.length > 0) {
+      await client.query("ROLLBACK");
+
+      return res.status(400).json({
+        error: "Paid orders cannot be deleted.",
+      });
+    }
+
+    // --------------------------------------------------
+    // DELETE COMPLAINTS
+    // --------------------------------------------------
+
+    await client.query(
+      `
+      DELETE FROM complaint
+      WHERE order_id = $1;
+      `,
+      [orderId]
+    );
+
+    // --------------------------------------------------
+    // DELETE RATINGS
+    // --------------------------------------------------
+
+    await client.query(
+      `
+      DELETE FROM rating
+      WHERE order_id = $1;
+      `,
+      [orderId]
+    );
+
+    // --------------------------------------------------
+    // DELETE WAITER ASSIGNMENT
+    // --------------------------------------------------
+
+    await client.query(
+      `
+      DELETE FROM order_assignment
+      WHERE order_id = $1;
+      `,
+      [orderId]
+    );
+
+    // --------------------------------------------------
+    // DELETE CHEF/BARTENDER PREPARATION RECORDS
+    // Must happen before deleting order_item
+    // --------------------------------------------------
+
+    await client.query(
+      `
+      DELETE FROM order_preparation
+      WHERE order_item_id IN (
+        SELECT
+          order_item_id
+        FROM order_item
+        WHERE order_id = $1
+      );
+      `,
+      [orderId]
+    );
+
+    // --------------------------------------------------
+    // DELETE ORDER ITEMS
+    // --------------------------------------------------
+
+    await client.query(
+      `
+      DELETE FROM order_item
+      WHERE order_id = $1;
+      `,
+      [orderId]
+    );
+
+    // --------------------------------------------------
+    // DELETE ORDER
+    // --------------------------------------------------
+
+    await client.query(
+      `
+      DELETE FROM orders
+      WHERE order_id = $1;
+      `,
+      [orderId]
+    );
+
+    await client.query("COMMIT");
+
+    res.json({
+      message: "Order deleted successfully",
+      order_id: orderId,
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+
+    console.error(
+      "Delete order error:",
+      error.message
+    );
+
+    res.status(500).json({
+      error: "Failed to delete order",
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// ======================================================
 // MARK ORDER AS SERVED
 // ======================================================
 
@@ -1336,6 +1502,8 @@ app.post(
 // START SERVER
 // ======================================================
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Chowly server running on http://0.0.0.0:${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(
+    `Chowly server running on http://0.0.0.0:${PORT}`
+  );
 });
