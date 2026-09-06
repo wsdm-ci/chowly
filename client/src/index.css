@@ -1946,3 +1946,131 @@ h4 {
   background: #fceaea;
   border-color: #d99a9a;
 }
+
+/* ==================================================
+   PAYMENT SUCCESS SCREEN
+   ================================================== */
+
+.payment-success-card {
+  max-width: 760px;
+  margin: 70px auto;
+  padding: 48px;
+  background: #ffffff;
+  border: 1px solid #e8e3da;
+  border-radius: 24px;
+  text-align: center;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.08);
+}
+
+.payment-success-icon {
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #222222;
+  color: #ffffff;
+  font-size: 36px;
+  font-weight: 700;
+}
+
+.payment-success-card .eyebrow {
+  margin-bottom: 8px;
+}
+
+.payment-success-card h2 {
+  margin: 0;
+  font-size: 42px;
+  line-height: 1.1;
+  letter-spacing: -1.5px;
+}
+
+.payment-success-message {
+  margin: 14px 0 32px;
+  font-size: 18px;
+  color: #666666;
+}
+
+.payment-success-details {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  margin: 0 auto 28px;
+  text-align: left;
+}
+
+.payment-success-details > div {
+  padding: 18px;
+  background: #f7f4ee;
+  border-radius: 14px;
+  border: 1px solid #ebe6dd;
+}
+
+.payment-success-details span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #777777;
+}
+
+.payment-success-details strong {
+  display: block;
+  font-size: 17px;
+  color: #222222;
+}
+
+.restaurant-thank-you {
+  margin: 0 0 30px;
+  padding: 24px;
+  background: #faf9f6;
+  border-radius: 16px;
+  border: 1px solid #ebe6dd;
+}
+
+.restaurant-thank-you strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 16px;
+}
+
+.restaurant-thank-you p {
+  margin: 0;
+  color: #666666;
+  line-height: 1.6;
+}
+
+.payment-success-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+/* MOBILE */
+@media (max-width: 700px) {
+  .payment-success-card {
+    margin: 35px 16px;
+    padding: 32px 22px;
+    border-radius: 20px;
+  }
+
+  .payment-success-card h2 {
+    font-size: 32px;
+  }
+
+  .payment-success-details {
+    grid-template-columns: 1fr;
+  }
+
+  .payment-success-actions {
+    flex-direction: column;
+  }
+
+  .payment-success-actions button {
+    width: 100%;
+  }
+}

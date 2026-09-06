@@ -14,6 +14,7 @@ function App() {
   const [showReview, setShowReview] = useState(false);
   const [order, setOrder] = useState(null);
   const [placingOrder, setPlacingOrder] = useState(false);
+  const [paymentSuccess, setPaymentSuccess] = useState(false);
 
   // CUSTOMER DETAILS
   const [customerName, setCustomerName] = useState("");
@@ -25,6 +26,7 @@ function App() {
     const saved = localStorage.getItem("chowlyCustomerId");
     return saved ? Number(saved) : null;
   });
+
   const [customerPage, setCustomerPage] = useState("menu");
   const [customerOrders, setCustomerOrders] = useState([]);
   const [customerOrdersLoading, setCustomerOrdersLoading] = useState(false);
@@ -158,6 +160,7 @@ function App() {
   );
 
   const openCustomerOrders = async () => {
+    setPaymentSuccess(false);
     setCustomerPage("orders");
     setOrder(null);
     setShowReview(false);
@@ -220,6 +223,7 @@ function App() {
 
     setShowReview(true);
     setCustomerPage("menu");
+    setPaymentSuccess(false);
   };
 
   const placeOrder = async () => {
@@ -265,18 +269,47 @@ function App() {
 
       const newCustomerId = data.customer.customer_id;
 
-      setCustomerId(newCustomerId);
-      localStorage.setItem("chowlyCustomerId", String(newCustomerId));
+      const newOrderId = data.order?.order_id || data.order_id;
 
-      setOrder(data.order);
+      if (!newOrderId) {
+        throw new Error(
+          "Order was created, but the order number could not be retrieved.",
+        );
+      }
+
+      setCustomerId(newCustomerId);
+
+      localStorage.setItem(
+        "chowlyCustomerId",
+        String(newCustomerId),
+      );
+
+      // Fetch the complete order details
+      const orderResponse = await fetch(
+        `${API_URL}/orders/${newOrderId}`,
+      );
+
+      if (!orderResponse.ok) {
+        throw new Error(
+          "Order was created, but the confirmation details could not be loaded.",
+        );
+      }
+
+      const completeOrder = await orderResponse.json();
+
+      // Display the order confirmation page
+      setOrder(completeOrder);
       setCart([]);
       setShowReview(false);
       setCustomerPage("order");
+      setPaymentSuccess(false);
 
+      // Reset feedback fields
       setComplaintText("");
       setRatingValue(0);
       setFeedbackMessage("");
 
+      // Refresh customer order history
       await loadCustomerOrders(newCustomerId);
     } catch (error) {
       console.error(error);
@@ -303,6 +336,7 @@ function App() {
       setOrder(data);
       setCustomerPage("order");
       setShowReview(false);
+      setPaymentSuccess(false);
 
       setComplaintText("");
       setRatingValue(0);
@@ -354,7 +388,9 @@ function App() {
         const ratingData = await ratingResponse.json();
 
         if (!ratingResponse.ok) {
-          throw new Error(ratingData.error || "Unable to submit rating.");
+          throw new Error(
+            ratingData.error || "Unable to submit rating.",
+          );
         }
 
         submittedSomething = true;
@@ -430,6 +466,7 @@ function App() {
     setPayingOrder(true);
 
     try {
+      // Record the pretend payment
       const response = await fetch(
         `${API_URL}/orders/${order.order_id}/payment`,
         {
@@ -447,13 +484,38 @@ function App() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Unable to record payment.");
+        throw new Error(
+          data.error || "Unable to record payment.",
+        );
       }
 
-      setOrder(data.order);
+      // Get the complete updated order from the server
+      const paidOrderId =
+        data.order?.order_id || order.order_id;
+
+      const orderResponse = await fetch(
+        `${API_URL}/orders/${paidOrderId}`,
+      );
+
+      if (!orderResponse.ok) {
+        throw new Error(
+          "Payment was recorded, but the updated order could not be loaded.",
+        );
+      }
+
+      const completePaidOrder =
+        await orderResponse.json();
+
+      // Store the complete paid order
+      setOrder(completePaidOrder);
+
+      // Show payment success screen
+      setPaymentSuccess(true);
+
+      // Refresh customer order history
       await loadCustomerOrders();
     } catch (error) {
-      console.error(error);
+      console.error("Payment error:", error);
       alert(error.message);
     } finally {
       setPayingOrder(false);
@@ -550,53 +612,53 @@ function App() {
   // WAITER - DELETE ORDER
   // --------------------------------------------------
 
-const deleteOrder = async () => {
-  if (!selectedOrder) return;
+  const deleteOrder = async () => {
+    if (!selectedOrder) return;
 
-  const confirmed = window.confirm(
-    `Delete Order #${selectedOrder.order_id}? This action cannot be undone.`,
-  );
-
-  if (!confirmed) return;
-
-  try {
-    const response = await fetch(
-      `${API_URL}/orders/${selectedOrder.order_id}`,
-      {
-        method: "DELETE",
-      },
+    const confirmed = window.confirm(
+      `Delete Order #${selectedOrder.order_id}? This action cannot be undone.`,
     );
 
-    const contentType =
-      response.headers.get("content-type") || "";
+    if (!confirmed) return;
 
-    const data = contentType.includes("application/json")
-      ? await response.json()
-      : {
-          error: await response.text(),
-        };
+    try {
+      const response = await fetch(
+        `${API_URL}/orders/${selectedOrder.order_id}`,
+        {
+          method: "DELETE",
+        },
+      );
 
-    if (!response.ok) {
-      throw new Error(
-        data.error || "Unable to delete order.",
+      const contentType =
+        response.headers.get("content-type") || "";
+
+      const data = contentType.includes("application/json")
+        ? await response.json()
+        : {
+            error: await response.text(),
+          };
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Unable to delete order.",
+        );
+      }
+
+      setSelectedOrder(null);
+      setReassigningStaff(false);
+
+      await loadWaiterData();
+
+      alert("Order deleted successfully.");
+    } catch (error) {
+      console.error("Delete order error:", error);
+
+      alert(
+        error.message ||
+          "Unable to delete order.",
       );
     }
-
-    setSelectedOrder(null);
-    setReassigningStaff(false);
-
-    await loadWaiterData();
-
-    alert("Order deleted successfully.");
-  } catch (error) {
-    console.error("Delete order error:", error);
-
-    alert(
-      error.message ||
-        "Unable to delete order.",
-    );
-  }
-};
+  };
 
   // --------------------------------------------------
   // WAITER - MARK SERVED
@@ -622,7 +684,9 @@ const deleteOrder = async () => {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Unable to mark order as served.");
+        throw new Error(
+          data.error || "Unable to mark order as served.",
+        );
       }
 
       await openOrder(selectedOrder.order_id);
@@ -661,6 +725,7 @@ const deleteOrder = async () => {
     setCustomerPage("menu");
     setShowReview(false);
     setOrder(null);
+    setPaymentSuccess(false);
     setFeedbackMessage("");
   };
 
@@ -685,6 +750,82 @@ const deleteOrder = async () => {
 
   const renderCustomer = () => {
     // -----------------------------
+    // PAYMENT SUCCESS
+    // -----------------------------
+
+    if (paymentSuccess && order) {
+      return (
+        <main className="order-page">
+          <section className="payment-success-card">
+            <div className="payment-success-icon">✓</div>
+
+            <p className="eyebrow">Payment Complete</p>
+
+            <h2>Payment Successful</h2>
+
+            <p className="payment-success-message">
+              Thank you for dining with us!
+            </p>
+
+            <div className="payment-success-details">
+              <div>
+                <span>Order Number</span>
+                <strong>#{order.order_id}</strong>
+              </div>
+
+              <div>
+                <span>Amount Paid</span>
+                <strong>
+                  ₦{Number(order.total).toLocaleString()}
+                </strong>
+              </div>
+
+              <div>
+                <span>Payment Method</span>
+                <strong>
+                  {order.payment?.payment_method || "Card"}
+                </strong>
+              </div>
+
+              <div>
+                <span>Payment Status</span>
+                <strong>Paid</strong>
+              </div>
+            </div>
+
+            <div className="restaurant-thank-you">
+              <strong>
+                Thank you for choosing The Garden Restaurant.
+              </strong>
+
+              <p>
+                We appreciate your visit and hope you enjoyed your
+                dining experience. We look forward to welcoming you
+                again soon!
+              </p>
+            </div>
+
+            <div className="payment-success-actions">
+              <button
+                className="primary-button"
+                onClick={backToMenu}
+              >
+                Back to Menu
+              </button>
+
+              <button
+                className="secondary-button"
+                onClick={openCustomerOrders}
+              >
+                My Orders
+              </button>
+            </div>
+          </section>
+        </main>
+      );
+    }
+
+    // -----------------------------
     // MY ORDERS
     // -----------------------------
 
@@ -694,13 +835,18 @@ const deleteOrder = async () => {
           <div className="page-header-row">
             <div>
               <p className="eyebrow">Customer</p>
+
               <h2>My Orders</h2>
+
               <p className="section-subtitle">
                 View your previous and current Chowly orders.
               </p>
             </div>
 
-            <button className="secondary-button" onClick={backToMenu}>
+            <button
+              className="secondary-button"
+              onClick={backToMenu}
+            >
               Back to Menu
             </button>
           </div>
@@ -712,25 +858,42 @@ const deleteOrder = async () => {
           ) : customerOrdersError ? (
             <div className="error-card">
               <p>{customerOrdersError}</p>
-              <button className="primary-button" onClick={loadCustomerOrders}>
+
+              <button
+                className="primary-button"
+                onClick={loadCustomerOrders}
+              >
                 Try Again
               </button>
             </div>
           ) : !customerId ? (
             <div className="empty-state">
               <h3>No customer profile yet</h3>
+
               <p>
-                Place your first order and your order history will appear here.
+                Place your first order and your order history will
+                appear here.
               </p>
-              <button className="primary-button" onClick={backToMenu}>
+
+              <button
+                className="primary-button"
+                onClick={backToMenu}
+              >
                 Browse Menu
               </button>
             </div>
           ) : customerOrders.length === 0 ? (
             <div className="empty-state">
               <h3>No orders yet</h3>
-              <p>Your Chowly orders will appear here after you place one.</p>
-              <button className="primary-button" onClick={backToMenu}>
+
+              <p>
+                Your Chowly orders will appear here after you place one.
+              </p>
+
+              <button
+                className="primary-button"
+                onClick={backToMenu}
+              >
                 Browse Menu
               </button>
             </div>
@@ -740,7 +903,9 @@ const deleteOrder = async () => {
                 <button
                   key={customerOrder.order_id}
                   className="customer-order-card"
-                  onClick={() => openCustomerOrder(customerOrder.order_id)}
+                  onClick={() =>
+                    openCustomerOrder(customerOrder.order_id)
+                  }
                 >
                   <div className="customer-order-card-top">
                     <div>
@@ -764,7 +929,8 @@ const deleteOrder = async () => {
 
                   <div className="customer-order-card-bottom">
                     <span>
-                      {customerOrder.estimated_waiting_time} min estimated wait
+                      {customerOrder.estimated_waiting_time} min
+                      estimated wait
                     </span>
 
                     <span>
@@ -796,7 +962,9 @@ const deleteOrder = async () => {
           <div className="page-header-row">
             <div>
               <p className="eyebrow">Order Confirmation</p>
+
               <h2>Order #{order.order_id}</h2>
+
               <p className="section-subtitle">
                 Here is everything you need to know about your order.
               </p>
@@ -817,6 +985,7 @@ const deleteOrder = async () => {
             <div className="order-status-header">
               <div>
                 <span className="small-label">Order Status</span>
+
                 <h3>{order.status}</h3>
               </div>
 
@@ -830,15 +999,24 @@ const deleteOrder = async () => {
             </div>
 
             <div className="order-waiting-box">
-              <span className="small-label">Estimated Waiting Time</span>
-              <strong>{order.estimated_waiting_time} minutes</strong>
+              <span className="small-label">
+                Estimated Waiting Time
+              </span>
+
+              <strong>
+                {order.estimated_waiting_time} minutes
+              </strong>
             </div>
 
             <div className="order-items-list">
               {order.items?.map((item) => (
-                <div className="order-item-row" key={item.order_item_id}>
+                <div
+                  className="order-item-row"
+                  key={item.order_item_id}
+                >
                   <div>
                     <strong>{item.name}</strong>
+
                     <span>
                       {item.quantity} × ₦
                       {Number(item.unit_price).toLocaleString()}
@@ -848,7 +1026,8 @@ const deleteOrder = async () => {
                   <strong>
                     ₦
                     {(
-                      Number(item.unit_price) * Number(item.quantity)
+                      Number(item.unit_price) *
+                      Number(item.quantity)
                     ).toLocaleString()}
                   </strong>
                 </div>
@@ -857,7 +1036,10 @@ const deleteOrder = async () => {
 
             <div className="order-total-row">
               <span>Total</span>
-              <strong>₦{Number(order.total).toLocaleString()}</strong>
+
+              <strong>
+                ₦{Number(order.total).toLocaleString()}
+              </strong>
             </div>
           </section>
 
@@ -865,6 +1047,7 @@ const deleteOrder = async () => {
             <div className="section-heading">
               <div>
                 <p className="eyebrow">Order Assignment</p>
+
                 <h3>Restaurant Team</h3>
               </div>
             </div>
@@ -873,16 +1056,23 @@ const deleteOrder = async () => {
               <div className="customer-staff-grid">
                 <div className="staff-info-card">
                   <span>Waiter</span>
-                  <strong>{order.assignment.waiter_name || "Assigned"}</strong>
+
+                  <strong>
+                    {order.assignment.waiter_name || "Assigned"}
+                  </strong>
                 </div>
 
                 <div className="staff-info-card">
                   <span>Chef</span>
-                  <strong>{order.assignment.chef_name || "Assigned"}</strong>
+
+                  <strong>
+                    {order.assignment.chef_name || "Assigned"}
+                  </strong>
                 </div>
 
                 <div className="staff-info-card">
                   <span>Bartender</span>
+
                   <strong>
                     {order.assignment.bartender_name || "Assigned"}
                   </strong>
@@ -890,7 +1080,9 @@ const deleteOrder = async () => {
               </div>
             ) : (
               <div className="empty-assignment">
-                <p>Staff have not been assigned to this order yet.</p>
+                <p>
+                  Staff have not been assigned to this order yet.
+                </p>
               </div>
             )}
           </section>
@@ -901,24 +1093,35 @@ const deleteOrder = async () => {
               <div className="section-heading">
                 <div>
                   <p className="eyebrow">After Service</p>
+
                   <h3>How was your experience?</h3>
                 </div>
               </div>
 
               {hasRating && (
                 <div className="saved-feedback">
-                  <span className="small-label">Your Rating</span>
+                  <span className="small-label">
+                    Your Rating
+                  </span>
+
                   <strong>
                     {"★".repeat(Number(order.rating.rating))}
-                    {"☆".repeat(5 - Number(order.rating.rating))}
+                    {"☆".repeat(
+                      5 - Number(order.rating.rating),
+                    )}
                   </strong>
                 </div>
               )}
 
               {hasComplaint && (
                 <div className="saved-feedback">
-                  <span className="small-label">Your Complaint</span>
-                  <p>{order.complaint.complaint_text}</p>
+                  <span className="small-label">
+                    Your Complaint
+                  </span>
+
+                  <p>
+                    {order.complaint.complaint_text}
+                  </p>
                 </div>
               )}
 
@@ -938,7 +1141,9 @@ const deleteOrder = async () => {
                                 ? "rating-button selected"
                                 : "rating-button"
                             }
-                            onClick={() => setRatingValue(value)}
+                            onClick={() =>
+                              setRatingValue(value)
+                            }
                           >
                             ★
                           </button>
@@ -949,7 +1154,9 @@ const deleteOrder = async () => {
 
                   {!hasComplaint && (
                     <div className="form-group">
-                      <label htmlFor="complaint">Complaint or feedback</label>
+                      <label htmlFor="complaint">
+                        Complaint or feedback
+                      </label>
 
                       <textarea
                         id="complaint"
@@ -968,11 +1175,15 @@ const deleteOrder = async () => {
                     onClick={submitFeedback}
                     disabled={submittingFeedback}
                   >
-                    {submittingFeedback ? "Saving..." : "Submit Feedback"}
+                    {submittingFeedback
+                      ? "Saving..."
+                      : "Submit Feedback"}
                   </button>
 
                   {feedbackMessage && (
-                    <p className="feedback-message">{feedbackMessage}</p>
+                    <p className="feedback-message">
+                      {feedbackMessage}
+                    </p>
                   )}
                 </div>
               ) : (
@@ -989,24 +1200,30 @@ const deleteOrder = async () => {
               <div className="section-heading">
                 <div>
                   <p className="eyebrow">Checkout</p>
+
                   <h3>Payment</h3>
                 </div>
               </div>
 
               <div className="pretend-payment-notice">
                 <strong>PRETEND PAYMENT</strong>
+
                 <span>
-                  This button records a simulated payment for the assignment.
-                  No real money will be charged.
+                  This button records a simulated payment for the
+                  assignment. No real money will be charged.
                 </span>
               </div>
 
               {hasPayment ? (
                 <div className="paid-state">
                   <strong>✓ Paid</strong>
+
                   <span>
-                    ₦{Number(order.payment.amount).toLocaleString()} via{" "}
-                    {order.payment.payment_method}
+                    ₦
+                    {Number(
+                      order.payment.amount,
+                    ).toLocaleString()}{" "}
+                    via {order.payment.payment_method}
                   </span>
                 </div>
               ) : (
@@ -1017,7 +1234,9 @@ const deleteOrder = async () => {
                 >
                   {payingOrder
                     ? "Recording Payment..."
-                    : `Pretend Pay ₦${Number(order.total).toLocaleString()}`}
+                    : `Pretend Pay ₦${Number(
+                        order.total,
+                      ).toLocaleString()}`}
                 </button>
               )}
             </section>
@@ -1026,14 +1245,18 @@ const deleteOrder = async () => {
           {!isServed && (
             <section className="waiting-notice">
               <strong>Order in progress</strong>
+
               <p>
-                Complaint, rating, and payment will become available once your
-                order has been served.
+                Complaint, rating, and payment will become available
+                once your order has been served.
               </p>
             </section>
           )}
 
-          <button className="back-to-menu-button" onClick={backToMenu}>
+          <button
+            className="back-to-menu-button"
+            onClick={backToMenu}
+          >
             ← Back to Menu
           </button>
         </main>
@@ -1049,7 +1272,9 @@ const deleteOrder = async () => {
         <section className="hero-section">
           <div>
             <p className="eyebrow">Welcome to</p>
+
             <h2>{restaurant?.name || "Chowly"}</h2>
+
             <p className="hero-description">
               Browse our menu, place your order, and track your dining
               experience from one simple platform.
@@ -1057,7 +1282,10 @@ const deleteOrder = async () => {
           </div>
 
           <div className="hero-actions">
-            <button className="my-orders-button" onClick={openCustomerOrders}>
+            <button
+              className="my-orders-button"
+              onClick={openCustomerOrders}
+            >
               My Orders
             </button>
           </div>
@@ -1069,6 +1297,7 @@ const deleteOrder = async () => {
               <div className="section-heading">
                 <div>
                   <p className="eyebrow">Our Menu</p>
+
                   <h3>Food & Drinks</h3>
                 </div>
               </div>
@@ -1076,23 +1305,32 @@ const deleteOrder = async () => {
               <div className="menu-grid">
                 {menu.map((item) => {
                   const cartItem = cart.find(
-                    (cartEntry) => cartEntry.menu_item_id === item.menu_item_id,
+                    (cartEntry) =>
+                      cartEntry.menu_item_id === item.menu_item_id,
                   );
 
                   return (
-                    <article className="menu-item-card" key={item.menu_item_id}>
+                    <article
+                      className="menu-item-card"
+                      key={item.menu_item_id}
+                    >
                       <div className="food-visual">
                         <img
                           src={`/images/${
                             {
                               "Jollof Rice & Chicken":
                                 "jollof-rice-chicken.jpg",
-                              "Grilled Fish & Chips": "grilled-fish-chips.jpg",
-                              "Chicken Burger": "chicken-burger.jpg",
-                              "French Fries": "french-fries.jpg",
-                              "Fresh Orange Juice": "fresh-orange-juice.jpg",
+                              "Grilled Fish & Chips":
+                                "grilled-fish-chips.jpg",
+                              "Chicken Burger":
+                                "chicken-burger.jpg",
+                              "French Fries":
+                                "french-fries.jpg",
+                              "Fresh Orange Juice":
+                                "fresh-orange-juice.jpg",
                               Chapman: "chapman.jpg",
-                              "Bottled Water": "bottled-water.jpg",
+                              "Bottled Water":
+                                "bottled-water.jpg",
                             }[item.name]
                           }`}
                           alt={item.name}
@@ -1102,7 +1340,10 @@ const deleteOrder = async () => {
                       <div className="menu-item-content">
                         <div className="menu-item-heading">
                           <div>
-                            <span className="item-type">{item.item_type}</span>
+                            <span className="item-type">
+                              {item.item_type}
+                            </span>
+
                             <h4>{item.name}</h4>
                           </div>
 
@@ -1112,7 +1353,8 @@ const deleteOrder = async () => {
                         </div>
 
                         <p className="prep-time">
-                          Ready in approximately {item.preparation_time} min
+                          Ready in approximately{" "}
+                          {item.preparation_time} min
                         </p>
 
                         <div className="menu-card-actions">
@@ -1128,7 +1370,13 @@ const deleteOrder = async () => {
 
                               <span>{cartItem.quantity}</span>
 
-                              <button onClick={() => addToCart(item)}>+</button>
+                              <button
+                                onClick={() =>
+                                  addToCart(item)
+                                }
+                              >
+                                +
+                              </button>
                             </div>
                           ) : (
                             <button
@@ -1150,16 +1398,26 @@ const deleteOrder = async () => {
               <section className="cart-bar">
                 <div>
                   <span>
-                    {cart.reduce((total, item) => total + item.quantity, 0)}{" "}
+                    {cart.reduce(
+                      (total, item) => total + item.quantity,
+                      0,
+                    )}{" "}
                     item(s)
                   </span>
 
-                  <strong>₦{cartTotal.toLocaleString()}</strong>
+                  <strong>
+                    ₦{cartTotal.toLocaleString()}
+                  </strong>
 
-                  <small>Estimated preparation: {cartWaitingTime} min</small>
+                  <small>
+                    Estimated preparation: {cartWaitingTime} min
+                  </small>
                 </div>
 
-                <button className="primary-button" onClick={openReview}>
+                <button
+                  className="primary-button"
+                  onClick={openReview}
+                >
                   Review Order →
                 </button>
               </section>
@@ -1170,7 +1428,9 @@ const deleteOrder = async () => {
             <div className="page-header-row">
               <div>
                 <p className="eyebrow">Almost There</p>
+
                 <h2>Review Your Order</h2>
+
                 <p className="section-subtitle">
                   Enter your details before submitting your order.
                 </p>
@@ -1189,37 +1449,49 @@ const deleteOrder = async () => {
                 <h3>Customer Details</h3>
 
                 <div className="form-group">
-                  <label htmlFor="customerName">Full Name *</label>
+                  <label htmlFor="customerName">
+                    Full Name *
+                  </label>
 
                   <input
                     id="customerName"
                     type="text"
                     value={customerName}
-                    onChange={(event) => setCustomerName(event.target.value)}
+                    onChange={(event) =>
+                      setCustomerName(event.target.value)
+                    }
                     placeholder="Enter your name"
                   />
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="customerPhone">Phone Number *</label>
+                  <label htmlFor="customerPhone">
+                    Phone Number *
+                  </label>
 
                   <input
                     id="customerPhone"
                     type="tel"
                     value={customerPhone}
-                    onChange={(event) => setCustomerPhone(event.target.value)}
+                    onChange={(event) =>
+                      setCustomerPhone(event.target.value)
+                    }
                     placeholder="e.g. +2348012345678"
                   />
                 </div>
 
                 <div className="form-group">
-                  <label htmlFor="customerEmail">Email Address</label>
+                  <label htmlFor="customerEmail">
+                    Email Address
+                  </label>
 
                   <input
                     id="customerEmail"
                     type="email"
                     value={customerEmail}
-                    onChange={(event) => setCustomerEmail(event.target.value)}
+                    onChange={(event) =>
+                      setCustomerEmail(event.target.value)
+                    }
                     placeholder="Optional"
                   />
                 </div>
@@ -1238,9 +1510,13 @@ const deleteOrder = async () => {
 
                 <div className="review-items">
                   {cart.map((item) => (
-                    <div className="review-item" key={item.menu_item_id}>
+                    <div
+                      className="review-item"
+                      key={item.menu_item_id}
+                    >
                       <div>
                         <strong>{item.name}</strong>
+
                         <span>
                           {item.quantity} × ₦
                           {Number(item.price).toLocaleString()}
@@ -1248,7 +1524,10 @@ const deleteOrder = async () => {
                       </div>
 
                       <strong>
-                        ₦{(Number(item.price) * item.quantity).toLocaleString()}
+                        ₦
+                        {(
+                          Number(item.price) * item.quantity
+                        ).toLocaleString()}
                       </strong>
                     </div>
                   ))}
@@ -1256,7 +1535,10 @@ const deleteOrder = async () => {
 
                 <div className="review-total">
                   <span>Total</span>
-                  <strong>₦{cartTotal.toLocaleString()}</strong>
+
+                  <strong>
+                    ₦{cartTotal.toLocaleString()}
+                  </strong>
                 </div>
 
                 <div className="review-wait">
@@ -1280,13 +1562,19 @@ const deleteOrder = async () => {
       <div className="page-header-row">
         <div>
           <p className="eyebrow">Staff Mode</p>
+
           <h2>Waiter Dashboard</h2>
+
           <p className="section-subtitle">
-            Manage orders, assign restaurant staff, and mark orders as served.
+            Manage orders, assign restaurant staff, and mark orders as
+            served.
           </p>
         </div>
 
-        <button className="secondary-button" onClick={loadWaiterData}>
+        <button
+          className="secondary-button"
+          onClick={loadWaiterData}
+        >
           Refresh Orders
         </button>
       </div>
@@ -1302,6 +1590,7 @@ const deleteOrder = async () => {
           <div className="section-heading">
             <div>
               <p className="eyebrow">Live Orders</p>
+
               <h3>All Orders</h3>
             </div>
           </div>
@@ -1313,6 +1602,7 @@ const deleteOrder = async () => {
           ) : orders.length === 0 ? (
             <div className="empty-state">
               <h3>No orders</h3>
+
               <p>New customer orders will appear here.</p>
             </div>
           ) : (
@@ -1325,11 +1615,15 @@ const deleteOrder = async () => {
                       ? "waiter-order-card active"
                       : "waiter-order-card"
                   }
-                  onClick={() => openOrder(currentOrder.order_id)}
+                  onClick={() =>
+                    openOrder(currentOrder.order_id)
+                  }
                 >
                   <div className="waiter-order-top">
                     <div>
-                      <strong>Order #{currentOrder.order_id}</strong>
+                      <strong>
+                        Order #{currentOrder.order_id}
+                      </strong>
 
                       <span className="customer-name-on-order">
                         {currentOrder.customer_name || "Customer"}
@@ -1346,7 +1640,9 @@ const deleteOrder = async () => {
                   </div>
 
                   <div className="waiter-order-bottom">
-                    <span>{currentOrder.estimated_waiting_time} min</span>
+                    <span>
+                      {currentOrder.estimated_waiting_time} min
+                    </span>
 
                     <span>
                       {currentOrder.payment_status === "Paid"
@@ -1364,19 +1660,25 @@ const deleteOrder = async () => {
           {!selectedOrder ? (
             <div className="empty-state waiter-empty">
               <div className="empty-state-icon">☰</div>
+
               <h3>Select an order</h3>
+
               <p>
-                Choose an order from the list to view its details and manage
-                staff assignment.
+                Choose an order from the list to view its details and
+                manage staff assignment.
               </p>
             </div>
           ) : (
             <div className="waiter-order-detail">
               <div className="detail-header">
                 <div>
-                  <p className="eyebrow">Order #{selectedOrder.order_id}</p>
+                  <p className="eyebrow">
+                    Order #{selectedOrder.order_id}
+                  </p>
 
-                  <h3>{selectedOrder.customer_name || "Customer"}</h3>
+                  <h3>
+                    {selectedOrder.customer_name || "Customer"}
+                  </h3>
                 </div>
 
                 <span
@@ -1390,20 +1692,30 @@ const deleteOrder = async () => {
 
               <div className="customer-contact">
                 {selectedOrder.customer_phone && (
-                  <span>📞 {selectedOrder.customer_phone}</span>
+                  <span>
+                    📞 {selectedOrder.customer_phone}
+                  </span>
                 )}
 
                 {selectedOrder.customer_email && (
-                  <span>✉️ {selectedOrder.customer_email}</span>
+                  <span>
+                    ✉️ {selectedOrder.customer_email}
+                  </span>
                 )}
               </div>
 
               <div className="waiter-detail-items">
                 {selectedOrder.items?.map((item) => (
-                  <div className="order-item-row" key={item.order_item_id}>
+                  <div
+                    className="order-item-row"
+                    key={item.order_item_id}
+                  >
                     <div>
                       <strong>{item.name}</strong>
-                      <span>Quantity: {item.quantity}</span>
+
+                      <span>
+                        Quantity: {item.quantity}
+                      </span>
                     </div>
 
                     <span>
@@ -1419,48 +1731,72 @@ const deleteOrder = async () => {
 
               <div className="detail-total">
                 <span>Total</span>
-                <strong>₦{Number(selectedOrder.total).toLocaleString()}</strong>
+
+                <strong>
+                  ₦
+                  {Number(
+                    selectedOrder.total,
+                  ).toLocaleString()}
+                </strong>
               </div>
 
               {/* STAFF ASSIGNMENT */}
               <section className="staff-assignment-section">
                 <div className="assignment-header">
                   <div>
-                    <p className="eyebrow">Staff Assignment</p>
+                    <p className="eyebrow">
+                      Staff Assignment
+                    </p>
+
                     <h4>Restaurant Team</h4>
                   </div>
 
-                  {selectedOrder.assignment && !reassigningStaff && (
-                    <button
-                      className="secondary-button"
-                      onClick={() => setReassigningStaff(true)}
-                    >
-                      Reassign Staff
-                    </button>
-                  )}
+                  {selectedOrder.assignment &&
+                    !reassigningStaff && (
+                      <button
+                        className="secondary-button"
+                        onClick={() =>
+                          setReassigningStaff(true)
+                        }
+                      >
+                        Reassign Staff
+                      </button>
+                    )}
                 </div>
 
-                {selectedOrder.assignment && !reassigningStaff ? (
+                {selectedOrder.assignment &&
+                !reassigningStaff ? (
                   <div className="assigned-staff-summary">
                     <div>
                       <span>Waiter</span>
-                      <strong>{selectedOrder.assignment.waiter_name}</strong>
+
+                      <strong>
+                        {selectedOrder.assignment.waiter_name}
+                      </strong>
                     </div>
 
                     <div>
                       <span>Chef</span>
-                      <strong>{selectedOrder.assignment.chef_name}</strong>
+
+                      <strong>
+                        {selectedOrder.assignment.chef_name}
+                      </strong>
                     </div>
 
                     <div>
                       <span>Bartender</span>
-                      <strong>{selectedOrder.assignment.bartender_name}</strong>
+
+                      <strong>
+                        {selectedOrder.assignment.bartender_name}
+                      </strong>
                     </div>
                   </div>
                 ) : (
                   <div className="staff-assignment-form">
                     <div className="form-group">
-                      <label htmlFor="waiterSelect">Waiter</label>
+                      <label htmlFor="waiterSelect">
+                        Waiter
+                      </label>
 
                       <select
                         id="waiterSelect"
@@ -1472,18 +1808,27 @@ const deleteOrder = async () => {
                           })
                         }
                       >
-                        <option value="">Select waiter</option>
+                        <option value="">
+                          Select waiter
+                        </option>
 
-                        {getStaffByRole("Waiter").map((person) => (
-                          <option key={person.staff_id} value={person.staff_id}>
-                            {person.name}
-                          </option>
-                        ))}
+                        {getStaffByRole("Waiter").map(
+                          (person) => (
+                            <option
+                              key={person.staff_id}
+                              value={person.staff_id}
+                            >
+                              {person.name}
+                            </option>
+                          ),
+                        )}
                       </select>
                     </div>
 
                     <div className="form-group">
-                      <label htmlFor="chefSelect">Chef</label>
+                      <label htmlFor="chefSelect">
+                        Chef
+                      </label>
 
                       <select
                         id="chefSelect"
@@ -1495,18 +1840,27 @@ const deleteOrder = async () => {
                           })
                         }
                       >
-                        <option value="">Select chef</option>
+                        <option value="">
+                          Select chef
+                        </option>
 
-                        {getStaffByRole("Chef").map((person) => (
-                          <option key={person.staff_id} value={person.staff_id}>
-                            {person.name}
-                          </option>
-                        ))}
+                        {getStaffByRole("Chef").map(
+                          (person) => (
+                            <option
+                              key={person.staff_id}
+                              value={person.staff_id}
+                            >
+                              {person.name}
+                            </option>
+                          ),
+                        )}
                       </select>
                     </div>
 
                     <div className="form-group">
-                      <label htmlFor="bartenderSelect">Bartender</label>
+                      <label htmlFor="bartenderSelect">
+                        Bartender
+                      </label>
 
                       <select
                         id="bartenderSelect"
@@ -1518,18 +1872,28 @@ const deleteOrder = async () => {
                           })
                         }
                       >
-                        <option value="">Select bartender</option>
+                        <option value="">
+                          Select bartender
+                        </option>
 
-                        {getStaffByRole("Bartender").map((person) => (
-                          <option key={person.staff_id} value={person.staff_id}>
-                            {person.name}
-                          </option>
-                        ))}
+                        {getStaffByRole("Bartender").map(
+                          (person) => (
+                            <option
+                              key={person.staff_id}
+                              value={person.staff_id}
+                            >
+                              {person.name}
+                            </option>
+                          ),
+                        )}
                       </select>
                     </div>
 
                     <div className="assignment-actions">
-                      <button className="primary-button" onClick={assignStaff}>
+                      <button
+                        className="primary-button"
+                        onClick={assignStaff}
+                      >
                         {selectedOrder.assignment
                           ? "Save Reassignment"
                           : "Assign Staff"}
@@ -1543,11 +1907,16 @@ const deleteOrder = async () => {
 
                             setSelectedStaff({
                               waiter_id: String(
-                                selectedOrder.assignment.waiter_id,
+                                selectedOrder.assignment
+                                  .waiter_id,
                               ),
-                              chef_id: String(selectedOrder.assignment.chef_id),
+                              chef_id: String(
+                                selectedOrder.assignment
+                                  .chef_id,
+                              ),
                               bartender_id: String(
-                                selectedOrder.assignment.bartender_id,
+                                selectedOrder.assignment
+                                  .bartender_id,
                               ),
                             });
                           }}
@@ -1570,7 +1939,10 @@ const deleteOrder = async () => {
                 </button>
 
                 {selectedOrder.status !== "Served" && (
-                  <button className="serve-button" onClick={markServed}>
+                  <button
+                    className="serve-button"
+                    onClick={markServed}
+                  >
                     ✓ Mark Order as Served
                   </button>
                 )}
@@ -1579,7 +1951,10 @@ const deleteOrder = async () => {
               {selectedOrder.status === "Served" && (
                 <div className="served-confirmation">
                   <strong>✓ Order Served</strong>
-                  <span>This order has been marked as served.</span>
+
+                  <span>
+                    This order has been marked as served.
+                  </span>
                 </div>
               )}
             </div>
@@ -1601,6 +1976,7 @@ const deleteOrder = async () => {
 
           <div>
             <h1>Chowly</h1>
+
             <span>Restaurant Ordering Platform</span>
           </div>
         </div>
@@ -1608,7 +1984,9 @@ const deleteOrder = async () => {
         <div className="mode-switcher">
           <button
             className={
-              mode === "customer" ? "mode-button active" : "mode-button"
+              mode === "customer"
+                ? "mode-button active"
+                : "mode-button"
             }
             onClick={() => switchMode("customer")}
           >
@@ -1616,7 +1994,11 @@ const deleteOrder = async () => {
           </button>
 
           <button
-            className={mode === "waiter" ? "mode-button active" : "mode-button"}
+            className={
+              mode === "waiter"
+                ? "mode-button active"
+                : "mode-button"
+            }
             onClick={() => switchMode("waiter")}
           >
             Waiter
@@ -1625,12 +2007,17 @@ const deleteOrder = async () => {
       </header>
 
       <div className="app-content">
-        {mode === "customer" ? renderCustomer() : renderWaiter()}
+        {mode === "customer"
+          ? renderCustomer()
+          : renderWaiter()}
       </div>
 
       <footer className="footer">
         <span>Chowly</span>
-        <span>Restaurant Ordering & Dining Management</span>
+
+        <span>
+          Restaurant Ordering & Dining Management
+        </span>
       </footer>
     </div>
   );
